@@ -2,7 +2,7 @@ import tkinter as tk
 from PIL import Image, ImageTk
 import random
 import os
-
+import numpy as np
 # Constants for suits and ranks
 SUITS = ["hearts", "diamonds", "clubs", "spades"]
 RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "jack", "queen", "king", "ace"]
@@ -12,14 +12,35 @@ IMAGE_DIR = "png"
 
 # Simple AI Player for demonstration purposes
 class AIPlayer:
-    def __init__(self, blackjack_game):
+    def __init__(self, blackjack_game, training = True, alpha=0.1, gamma=0.9, epsilon=0.1):
         self.blackjack_game = blackjack_game
+        self.training = training
+        self.alpha = alpha  # learning rate
+        self.gamma = gamma  # discount factor
+        self.epsilon = epsilon  # exploration rate
+        self.q_table = np.zeros((22, 11, 2))  # 22 for player's hand value (1-21, and >21), 11 for dealer's card (1-10), 2 for actions
 
-    def make_decision(self):
-        # Simple strategy: hit if score < 17, otherwise stand
-        if self.blackjack_game.calculate_score(self.blackjack_game.player_hand) < 17:
-            return 'hit'
-        return 'stand'
+    def make_decision(self,state):
+        if np.random.rand() < self.epsilon:
+            # Exploration: choose a random action
+            action =  np.random.choice(['hit', 'stand'])
+        else:
+            # Exploitation: choose the best action based on Q-table
+            player_value = self.blackjack_game.calculate_score(self.blackjack_game.player_hand)
+            dealer_card = self.blackjack_game.dealer_hand[0][0]
+            if self.q_table[player_value, dealer_card, 0] > self.q_table[player_value, dealer_card, 1]:
+                action = 'hit'
+            else:
+                action = 'stand'
+
+    def update_q_table(self, action, reward,next_state):
+        pass
+
+    def get_reward(self):
+        pass
+
+
+
 
 class Blackjack:
     def __init__(self):
@@ -53,6 +74,9 @@ class Blackjack:
             score -= 10
             ace_count -= 1
         return score
+    
+    def get_game_state(self):
+        return (self.calculate_score(self.player_hand),self.calculate_score(self.dealer_hand))
 
     def start_game(self):
         self.shuffle_deck()
