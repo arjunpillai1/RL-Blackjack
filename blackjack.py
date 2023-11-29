@@ -8,7 +8,7 @@ SUITS = ["hearts", "diamonds", "clubs", "spades"]
 RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "jack", "queen", "king", "ace"]
 
 # Path to the directory with card images
-IMAGE_DIR = "playing-cards-assets-master\playing-cards-assets-master\png"  # Update with the correct path
+IMAGE_DIR = "png" 
 
 # Simple AI Player for demonstration purposes
 class AIPlayer:
@@ -179,6 +179,8 @@ class BlackjackGUI:
         player_wins = 0
         dealer_wins = 0
         ties = 0
+        player_score_frequency = {}
+        dealer_score_frequency = {}
         
         for game_number in range(num_games):
             self.game.reset_game()
@@ -209,6 +211,11 @@ class BlackjackGUI:
                 ties += 1
                 result = "tie"
             
+            # Update score frequencies
+            player_score_frequency[player_score] = player_score_frequency.get(player_score, 0) + 1
+            dealer_score_frequency[dealer_score] = dealer_score_frequency.get(dealer_score, 0) + 1
+
+            
             print(f"Game {game_number + 1}: Player {result}.")
             print(f"Player Hand: {player_hand} | Score: {player_score}")
             print(f"Dealer Hand: {dealer_hand} | Score: {dealer_score}\n")
@@ -218,6 +225,14 @@ class BlackjackGUI:
         print(f"Player wins: {player_wins}")
         print(f"Dealer wins: {dealer_wins}")
         print(f"Ties: {ties}")
+
+        print("\nPlayer Score Frequencies:")
+        for score, frequency in sorted(player_score_frequency.items()):
+            print(f"Score {score}: {frequency} times")
+
+        print("\nDealer Score Frequencies:")
+        for score, frequency in sorted(dealer_score_frequency.items()):
+            print(f"Score {score}: {frequency} times")
 
 if __name__ == "__main__":
     game = Blackjack()
