@@ -3,6 +3,8 @@ from PIL import Image, ImageTk
 import random
 import os
 import numpy as np
+import matplotlib.pyplot as plt
+
 # Constants for suits and ranks
 SUITS = ["hearts", "diamonds", "clubs", "spades"]
 RANKS = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "jack", "queen", "king", "ace"]
@@ -18,12 +20,23 @@ class AIPlayer:
         self.alpha = alpha  # learning rate
         self.gamma = gamma  # discount factor
         self.epsilon = epsilon  # exploration rate
-        self.q_table = np.zeros((32, 12, 2))  # 22 for player's hand value (1-21, and >21), 11 for dealer's card (1-10), 2 for actions
-        # Adjusted to 31 to accomodate all possible player hand values
+        if self.training:
+            self.q_table = np.zeros((32, 12, 2))  # 22 for player's hand value (1-21, and >21), 11 for dealer's card (1-10), 2 for actions
+            # Adjusted to 31 to accomodate all possible player hand values
+        else:
+            try:
+                # Loading saved Q Table
+                self.q_table = np.load('results\qtable-100000steps.npz')
+                self.q_table = self.q_table['arr_0']
+            except FileNotFoundError:
+                print("The specified file was not found.")
+            except Exception as e:
+                print(f"An unexpected error occurred during q table load: {e}")
 
     def make_decision(self):
         exploration_chance = np.random.rand()
-        if exploration_chance < self.epsilon:
+        # Exploration is only triggered during qtable training
+        if (exploration_chance < self.epsilon) and self.training:
             # Exploration: choose a random action
             action =  np.random.choice(['hit', 'stand'])
 
@@ -239,8 +252,8 @@ class BlackjackGUI:
         self.stand_button.config(state=tk.NORMAL)
         self.update_gui()
 
-    def run_ai_game(self, num_games):
-        self.ai_player = AIPlayer(self.game)
+    def run_ai_game(self, num_games, training):
+        self.ai_player = AIPlayer(self.game,training)
         player_wins = 0
         dealer_wins = 0
         ties = 0
@@ -263,17 +276,20 @@ class BlackjackGUI:
                 new_state = (self.game.calculate_score(self.game.player_hand), self.game.calculate_score([self.game.dealer_hand[0]]))
 
                 # Immediate reward to incentivize hitting without busting
-                immediate_reward = self.ai_player.get_immediate_reward(current_state,new_state)
-                self.ai_player.update_q_table(current_state, decision, immediate_reward, new_state)
+                if training:
+                    immediate_reward = self.ai_player.get_immediate_reward(current_state,new_state)
+                    self.ai_player.update_q_table(current_state, decision, immediate_reward, new_state)
                 
                 # Check if game is over
                 if new_state[0] > 21 or decision =='stand':
                     self.game.game_over = True
             while self.game.calculate_score(self.game.dealer_hand) < 17:
                 self.game.deal_card(self.game.dealer_hand)
+
             # Final reward calculation and Q-table update for game end
-            final_reward = self.ai_player.get_final_reward()
-            self.ai_player.update_q_table(current_state, decision, final_reward, new_state)
+            if training:
+                final_reward = self.ai_player.get_final_reward()
+                self.ai_player.update_q_table(current_state, decision, final_reward, new_state)
         
             
             
@@ -317,28 +333,29 @@ class BlackjackGUI:
             print(f"Score {score}: {frequency} times")
 
         #Visualizing the q table
-        import matplotlib.pyplot as plt
-        np.savez(f"qtable-{num_games}steps.npz",self.ai_player.q_table)
-        # Set up the matplotlib figure with subplots
-        fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+        if training:
+            np.savez(f"qtable-{num_games}steps.npz",self.ai_player.q_table)
+            # Set up the matplotlib figure with subplots
+            fig, axes = plt.subplots(1, 2, figsize=(10, 5))
 
-        # Loop through each slice and create a heatmap
-        for i in range(2):
-            ax = axes[i]
-            heatmap = ax.imshow(self.ai_player.q_table[:, :, i])
-            ax.set_title(f'Index {i + 1}')
-            fig.colorbar(heatmap, ax=ax)
+            # Loop through each slice and create a heatmap
+            for i in range(2):
+                ax = axes[i]
+                heatmap = ax.imshow(self.ai_player.q_table[:, :, i])
+                ax.set_title(f'Index {i + 1}')
+                fig.colorbar(heatmap, ax=ax)
 
-        plt.tight_layout()
-        plt.show()
+            plt.tight_layout()
+            plt.show()
 
 if __name__ == "__main__":
     game = Blackjack()
     ai_mode = input("Play in AI mode? (yes/no): ").lower() == 'yes'
     if ai_mode:
         num_games = int(input("How many games should the AI play? "))
+        training_mode = False
         gui = BlackjackGUI(game)
-        gui.run_ai_game(num_games)
+        gui.run_ai_game(num_games, training_mode)
     else:
         gui = BlackjackGUI(game)
         gui.window.mainloop()
