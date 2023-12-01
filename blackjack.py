@@ -18,28 +18,66 @@ class AIPlayer:
         self.alpha = alpha  # learning rate
         self.gamma = gamma  # discount factor
         self.epsilon = epsilon  # exploration rate
-        self.q_table = np.zeros((22, 11, 2))  # 22 for player's hand value (1-21, and >21), 11 for dealer's card (1-10), 2 for actions
+        self.q_table = np.zeros((32, 12, 2))  # 22 for player's hand value (1-21, and >21), 11 for dealer's card (1-10), 2 for actions
+        # Adjusted to 31 to accomodate all possible player hand values
 
-    def make_decision(self,state):
-        if np.random.rand() < self.epsilon:
+    def make_decision(self):
+        exploration_chance = np.random.rand()
+        if exploration_chance < self.epsilon:
             # Exploration: choose a random action
             action =  np.random.choice(['hit', 'stand'])
+
         else:
             # Exploitation: choose the best action based on Q-table
             player_value = self.blackjack_game.calculate_score(self.blackjack_game.player_hand)
-            dealer_card = self.blackjack_game.dealer_hand[0][0]
+            dealer_card = self.blackjack_game.calculate_score(self.blackjack_game.dealer_hand[0])
             if self.q_table[player_value, dealer_card, 0] > self.q_table[player_value, dealer_card, 1]:
                 action = 'hit'
             else:
                 action = 'stand'
+        return action
 
-    def update_q_table(self, action, reward,next_state):
-        pass
+    def update_q_table(self, state, action, reward, new_state):
+        action_index = 0 if action == 'hit' else 1
+        current_q_value = self.q_table[state[0], state[1], action_index]
+        # Map all bust values to 22
+        player_score = max(new_state[0],22)
+        # Find the best Q value for the new state
+        new_max_q = np.max(self.q_table[player_score, new_state[1]])
 
-    def get_reward(self):
-        pass
+        # Update the Q-table using the Q-learning formula
+        self.q_table[state[0], state[1], action_index] = current_q_value + \
+                                                        self.alpha * (reward + self.gamma * new_max_q - current_q_value)
 
+    def get_final_reward(self):
+        player_score = self.blackjack_game.calculate_score(self.blackjack_game.player_hand)
+        dealer_score = self.blackjack_game.calculate_score(self.blackjack_game.dealer_hand)
+        
+        # Basic win/lose/tie rewards
+        if player_score > 21:
+            return -1.5  # Lose with additional penalty for busting
+        elif dealer_score > 21 or player_score > dealer_score:
+            reward = 1   # Win
+        elif player_score < dealer_score:
+            return -1  # Lose
+        else:
+            return 0   # Tie
 
+        # Additional rewards for scores close to 21
+        if player_score >= 20:
+            reward += 0.5
+        elif player_score >= 18:
+            reward += 0.2
+
+        return reward
+
+    def get_immediate_reward(self, old_state,new_state):
+        if new_state[0] > 21:
+            return -1  # Penalty for busting
+        elif new_state[0] > old_state[0]:
+            return 0.1  # Small reward for improvement
+        else:
+            return 0  # Neutral for no significant change
 
 
 class Blackjack:
@@ -62,6 +100,9 @@ class Blackjack:
     def calculate_score(self, hand):
         score = 0
         ace_count = 0
+
+        if isinstance(hand, tuple): # Unelegant solution to handling score for upcard
+            hand = [hand]
         for rank, _ in hand:
             if rank in ["jack", "queen", "king"]:
                 score += 10
@@ -209,15 +250,32 @@ class BlackjackGUI:
         for game_number in range(num_games):
             self.game.reset_game()
             while not self.game.game_over:
+                 # Current state before making a decision
+                current_state = (self.game.calculate_score(self.game.player_hand), self.game.calculate_score([self.game.dealer_hand[0]]))
+                # AI makes a decision
                 decision = self.ai_player.make_decision()
+
+                # Apply decision and get new state
                 if decision == 'hit':
+                    # print("pre hit hand:",self.game.player_hand)
                     self.game.deal_card(self.game.player_hand)
-                    if self.game.calculate_score(self.game.player_hand) > 21:
-                        self.game.game_over = True
-                else:
-                    while self.game.calculate_score(self.game.dealer_hand) < 17:
-                        self.game.deal_card(self.game.dealer_hand)
+                    # print("after hit hand:",self.game.player_hand)
+                new_state = (self.game.calculate_score(self.game.player_hand), self.game.calculate_score([self.game.dealer_hand[0]]))
+
+                # Immediate reward to incentivize hitting without busting
+                immediate_reward = self.ai_player.get_immediate_reward(current_state,new_state)
+                self.ai_player.update_q_table(current_state, decision, immediate_reward, new_state)
+                
+                # Check if game is over
+                if new_state[0] > 21 or decision =='stand':
                     self.game.game_over = True
+            while self.game.calculate_score(self.game.dealer_hand) < 17:
+                self.game.deal_card(self.game.dealer_hand)
+            # Final reward calculation and Q-table update for game end
+            final_reward = self.ai_player.get_final_reward()
+            self.ai_player.update_q_table(current_state, decision, final_reward, new_state)
+        
+            
             
             # Determine the outcome of the game and update the counters
             player_score = self.game.calculate_score(self.game.player_hand)
@@ -257,6 +315,22 @@ class BlackjackGUI:
         print("\nDealer Score Frequencies:")
         for score, frequency in sorted(dealer_score_frequency.items()):
             print(f"Score {score}: {frequency} times")
+
+        #Visualizing the q table
+        import matplotlib.pyplot as plt
+        np.savez(f"qtable-{num_games}steps.npz",self.ai_player.q_table)
+        # Set up the matplotlib figure with subplots
+        fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+
+        # Loop through each slice and create a heatmap
+        for i in range(2):
+            ax = axes[i]
+            heatmap = ax.imshow(self.ai_player.q_table[:, :, i])
+            ax.set_title(f'Index {i + 1}')
+            fig.colorbar(heatmap, ax=ax)
+
+        plt.tight_layout()
+        plt.show()
 
 if __name__ == "__main__":
     game = Blackjack()
